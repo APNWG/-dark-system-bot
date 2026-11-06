@@ -1,0 +1,12 @@
+{
+  "name": "dark-system-bot",
+  "version": "1.0.0",
+  "description": "Dark System Discord Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3"
+  }
+}
