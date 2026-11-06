@@ -2,6 +2,9 @@ name: Dark System Bot
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   run:
