@@ -1,4 +1,3 @@
-
 const {
   Client,
   GatewayIntentBits,
@@ -29,7 +28,6 @@ console.log("TOKEN LENGTH:", TOKEN.length);
 
 const PREFIX = "!";
 
-// ضع آيدي الأونر هنا
 const OWNER_IDS = [
   "PUT_OWNER_ID"
 ];
@@ -44,6 +42,7 @@ const CONFIG = {
 
   PANEL_IMAGE_URL: ""
 };
+
 // =================================
 // DATABASE
 // =================================
@@ -124,6 +123,35 @@ function makeEmbed(title, description) {
   }
 
   return embed;
+}
+
+// =================================
+// POINTS MODAL
+// =================================
+
+function createPointsModal(action) {
+  const modal = new ModalBuilder()
+    .setCustomId(`points_${action}`)
+    .setTitle(action === "add" ? "إضافة نقاط" : "خصم نقاط");
+
+  const userInput = new TextInputBuilder()
+    .setCustomId("user_id")
+    .setLabel("ID العضو")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const amountInput = new TextInputBuilder()
+    .setCustomId("amount")
+    .setLabel("عدد النقاط")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(userInput),
+    new ActionRowBuilder().addComponents(amountInput)
+  );
+
+  return modal;
 }
 
 // =================================
@@ -298,33 +326,51 @@ async function sendAdminPanel(channel) {
   const embed = makeEmbed(
     "DARK SYSTEM",
     "**ADMIN CONTROL PANEL**\n\n" +
-    "مرحباً بك في لوحة تحكم الإدارة.\n" +
-    "اختر الخدمة المطلوبة من الأسفل."
+    "الرجاء الظغط على خيار الذي في الاسفل لاظهار لوحة تحكم الادارة\n\n" +
+    "قم باختيار الزر الصحيح."
   );
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("admin_stats")
-      .setLabel("الإحصائيات")
-      .setEmoji("📊")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("admin_add")
-      .setLabel("إضافة نقاط")
-      .setEmoji("➕")
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId("admin_remove")
-      .setLabel("خصم نقاط")
-      .setEmoji("➖")
-      .setStyle(ButtonStyle.Danger)
-  );
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId("admin_section_select")
+    .setPlaceholder("اختر الخدمة المطلوبة")
+    .addOptions(
+      {
+        label: "نقاطي",
+        description: "عرض نقاطك الحالية",
+        value: "my_points",
+        emoji: "⭐"
+      },
+      {
+        label: "إضافة نقاط",
+        description: "إضافة نقاط إلى عضو",
+        value: "add",
+        emoji: "➕"
+      },
+      {
+        label: "خصم نقاط",
+        description: "خصم نقاط من عضو",
+        value: "remove",
+        emoji: "➖"
+      },
+      {
+        label: "الإحصائيات",
+        description: "عرض إحصائيات النظام",
+        value: "stats",
+        emoji: "📊"
+      },
+      {
+        label: "رتبتك",
+        description: "عرض رتبك في السيرفر",
+        value: "my_roles",
+        emoji: "🛡️"
+      }
+    );
 
   await channel.send({
     embeds: [embed],
-    components: [row]
+    components: [
+      new ActionRowBuilder().addComponents(menu)
+    ]
   });
 }
 
@@ -345,6 +391,106 @@ client.on(Events.InteractionCreate, async interaction => {
         interaction,
         interaction.values[0]
       );
+    }
+
+    // ADMIN MENU SELECT
+
+    if (
+      interaction.isStringSelectMenu() &&
+      interaction.customId === "admin_section_select"
+    ) {
+      const choice = interaction.values[0];
+
+      // MY POINTS
+
+      if (choice === "my_points") {
+        const points = db.points[interaction.user.id] || 0;
+
+        return interaction.reply({
+          embeds: [
+            makeEmbed(
+              "DARK SYSTEM — MY POINTS",
+              `**العضو:** ${interaction.user}\n` +
+              `**نقاطك الحالية:** ⭐ ${points}`
+            )
+          ],
+          ephemeral: true
+        });
+      }
+
+      // MY ROLES
+
+      if (choice === "my_roles") {
+        const member = await interaction.guild.members.fetch(
+          interaction.user.id
+        );
+
+        const roles = member.roles.cache
+          .filter(role => role.id !== interaction.guild.id)
+          .sort((a, b) => b.position - a.position)
+          .map(role => `🛡️ ${role.name}`);
+
+        const description = roles.length
+          ? roles.join("\n")
+          : "ليس لديك رتب في السيرفر.";
+
+        return interaction.reply({
+          embeds: [
+            makeEmbed(
+              "DARK SYSTEM — YOUR RANKS",
+              `**العضو:** ${interaction.user}\n\n${description}`
+            )
+          ],
+          ephemeral: true
+        });
+      }
+
+      // STATISTICS
+
+      if (choice === "stats") {
+        if (
+          !isOwner(interaction) &&
+          !hasRole(interaction.member, CONFIG.STATS_ROLE_IDS)
+        ) {
+          return interaction.reply({
+            content: "ليس لديك صلاحية عرض الإحصائيات.",
+            ephemeral: true
+          });
+        }
+
+        const tickets = Object.values(db.tickets);
+
+        return interaction.reply({
+          embeds: [
+            makeEmbed(
+              "DARK SYSTEM — STATISTICS",
+              `**إجمالي التذاكر:** ${tickets.length}\n` +
+              `**المفتوحة:** ${tickets.filter(t => t.open).length}\n` +
+              `**المغلقة:** ${tickets.filter(t => !t.open).length}\n` +
+              `**الأعضاء المسجلون بالنقاط:** ${Object.keys(db.points).length}`
+            )
+          ],
+          ephemeral: true
+        });
+      }
+
+      // ADD / REMOVE POINTS
+
+      if (choice === "add" || choice === "remove") {
+        if (
+          !isOwner(interaction) &&
+          !hasRole(interaction.member, CONFIG.POINTS_ROLE_IDS)
+        ) {
+          return interaction.reply({
+            content: "ليس لديك صلاحية إدارة النقاط.",
+            ephemeral: true
+          });
+        }
+
+        return interaction.showModal(
+          createPointsModal(choice)
+        );
+      }
     }
 
     // BUTTONS
@@ -441,7 +587,7 @@ client.on(Events.InteractionCreate, async interaction => {
         return;
       }
 
-      // STATISTICS
+      // OLD ADMIN BUTTONS SUPPORT
 
       if (interaction.customId === "admin_stats") {
         if (
@@ -470,8 +616,6 @@ client.on(Events.InteractionCreate, async interaction => {
         });
       }
 
-      // POINTS PERMISSIONS
-
       if (
         interaction.customId === "admin_add" ||
         interaction.customId === "admin_remove"
@@ -489,28 +633,9 @@ client.on(Events.InteractionCreate, async interaction => {
         const action =
           interaction.customId === "admin_add" ? "add" : "remove";
 
-        const modal = new ModalBuilder()
-          .setCustomId(`points_${action}`)
-          .setTitle(action === "add" ? "إضافة نقاط" : "خصم نقاط");
-
-        const userInput = new TextInputBuilder()
-          .setCustomId("user_id")
-          .setLabel("ID العضو")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
-        const amountInput = new TextInputBuilder()
-          .setCustomId("amount")
-          .setLabel("عدد النقاط")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(userInput),
-          new ActionRowBuilder().addComponents(amountInput)
+        return interaction.showModal(
+          createPointsModal(action)
         );
-
-        return interaction.showModal(modal);
       }
     }
 
@@ -588,8 +713,10 @@ client.on(Events.MessageCreate, async message => {
   if (message.author.bot || !message.guild) return;
 
   if (message.content === `${PREFIX}setup-tickets`) {
-    if (message.author.id !== message.guild.ownerId &&
-        !OWNER_IDS.includes(message.author.id)) {
+    if (
+      message.author.id !== message.guild.ownerId &&
+      !OWNER_IDS.includes(message.author.id)
+    ) {
       return message.reply("هذا الأمر مخصص لمالك السيرفر.");
     }
 
@@ -597,8 +724,10 @@ client.on(Events.MessageCreate, async message => {
   }
 
   if (message.content === `${PREFIX}setup-admin`) {
-    if (message.author.id !== message.guild.ownerId &&
-        !OWNER_IDS.includes(message.author.id)) {
+    if (
+      message.author.id !== message.guild.ownerId &&
+      !OWNER_IDS.includes(message.author.id)
+    ) {
       return message.reply("هذا الأمر مخصص لمالك السيرفر.");
     }
 
