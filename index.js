@@ -38,21 +38,12 @@ const CONFIG = {
   TICKET_CATEGORY_ID: "1527671262611243088",
   LOG_CHANNEL_ID: "PUT_LOG_CHANNEL_ID",
 
-  SUPPORT_ROLE_IDS: [
-    "PUT_SUPPORT_ROLE_ID"
-  ],
-
-  STATS_ROLE_IDS: [
-    "PUT_ADMIN_ROLE_ID"
-  ],
-
-  POINTS_ROLE_IDS: [
-    "PUT_POINTS_ROLE_ID"
-  ],
+  SUPPORT_ROLE_IDS: [],
+  STATS_ROLE_IDS: [],
+  POINTS_ROLE_IDS: [],
 
   PANEL_IMAGE_URL: ""
 };
-
 // =================================
 // DATABASE
 // =================================
