@@ -1,7 +1,9 @@
+
 const {
   Client,
   GatewayIntentBits,
   Partials,
+  Events,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
@@ -11,20 +13,23 @@ const {
   PermissionFlagsBits,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle,
-  Events
+  TextInputStyle
 } = require("discord.js");
 
 const fs = require("fs");
 
-// ===============================
-// DARK SYSTEM CONFIG
-// ===============================
+// =================================
+// DARK SYSTEM CONFIGURATION
+// =================================
 
-const TOKEN = "PUT_BOT_TOKEN_HERE";
+const TOKEN = process.env.DISCORD_TOKEN;
+
 const PREFIX = "!";
 
-const OWNER_IDS = [];
+// ضع آيدي الأونر هنا
+const OWNER_IDS = [
+  "PUT_OWNER_ID"
+];
 
 const CONFIG = {
   TICKET_CATEGORY_ID: "PUT_CATEGORY_ID",
@@ -45,9 +50,9 @@ const CONFIG = {
   PANEL_IMAGE_URL: ""
 };
 
-// ===============================
+// =================================
 // DATABASE
-// ===============================
+// =================================
 
 const DB_FILE = "./dark-system-data.json";
 
@@ -59,9 +64,12 @@ let db = {
 
 if (fs.existsSync(DB_FILE)) {
   try {
-    db = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-  } catch (error) {
-    console.error("Database error:", error);
+    db = {
+      ...db,
+      ...JSON.parse(fs.readFileSync(DB_FILE, "utf8"))
+    };
+  } catch (e) {
+    console.log("Database could not be loaded.");
   }
 }
 
@@ -69,9 +77,9 @@ function saveDB() {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
-// ===============================
-// BOT
-// ===============================
+// =================================
+// CLIENT
+// =================================
 
 const client = new Client({
   intents: [
@@ -83,31 +91,35 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-const COLORS = {
-  BLACK: 0x080808,
-  WHITE: 0xffffff,
-  BLUE: 0x237bff
-};
+// =================================
+// PERMISSIONS
+// =================================
 
 function isOwner(interaction) {
-  return OWNER_IDS.includes(interaction.user.id) ||
-    interaction.guild.ownerId === interaction.user.id;
+  return (
+    OWNER_IDS.includes(interaction.user.id) ||
+    interaction.guild.ownerId === interaction.user.id
+  );
 }
 
 function hasRole(member, roles) {
   return roles.some(id => member.roles.cache.has(id));
 }
 
-function isStaff(member) {
-  return isOwner({
-    user: member.user,
-    guild: member.guild
-  }) || hasRole(member, CONFIG.SUPPORT_ROLE_IDS);
+function isStaff(interaction) {
+  return (
+    isOwner(interaction) ||
+    hasRole(interaction.member, CONFIG.SUPPORT_ROLE_IDS)
+  );
 }
+
+// =================================
+// EMBEDS
+// =================================
 
 function makeEmbed(title, description) {
   const embed = new EmbedBuilder()
-    .setColor(COLORS.BLACK)
+    .setColor(0x080808)
     .setTitle(title)
     .setDescription(description)
     .setFooter({ text: "DARK SYSTEM" })
@@ -120,14 +132,14 @@ function makeEmbed(title, description) {
   return embed;
 }
 
-// ===============================
+// =================================
 // TICKET PANEL
-// ===============================
+// =================================
 
 async function sendTicketPanel(channel) {
   const embed = makeEmbed(
-    "DARK SYSTEM — TICKET PANEL",
-    "الرجاء الضغط على الخيار الموجود بالأسفل لإظهار جميع أنواع التذاكر.\n\nيُرجى اختيار القسم الصحيح."
+    "DARK SYSTEM — TICKET",
+    "الرجاء الضغط على الخيار الذي في الأسفل لإظهار جميع أنواع التذكرة.\n\nقم باختيار القسم الصحيح."
   );
 
   const menu = new StringSelectMenuBuilder()
@@ -168,9 +180,9 @@ async function sendTicketPanel(channel) {
   });
 }
 
-// ===============================
+// =================================
 // CREATE TICKET
-// ===============================
+// =================================
 
 async function createTicket(interaction, type) {
   const userId = interaction.user.id;
@@ -192,7 +204,7 @@ async function createTicket(interaction, type) {
 
   if (!category || category.type !== ChannelType.GuildCategory) {
     return interaction.reply({
-      content: "لم يتم إعداد قسم التذاكر بشكل صحيح.",
+      content: "إعداد قسم التذاكر غير صحيح.",
       ephemeral: true
     });
   }
@@ -200,10 +212,9 @@ async function createTicket(interaction, type) {
   db.ticketNumber++;
 
   const number = String(db.ticketNumber).padStart(3, "0");
-  const ticketName = `ticket-${number}`;
 
   const channel = await interaction.guild.channels.create({
-    name: ticketName,
+    name: `ticket-${number}`,
     type: ChannelType.GuildText,
     parent: category.id,
     topic: `TICKET-${number} | ${userId}`,
@@ -255,8 +266,8 @@ async function createTicket(interaction, type) {
     `TICKET-${number}`,
     `**صاحب التذكرة:** <@${userId}>\n` +
     `**القسم:** ${type}\n` +
-    `**الحالة:** مفتوحة\n\n` +
-    "يرجى كتابة تفاصيل طلبك وانتظار أحد أفراد الإدارة."
+    "**الحالة:** مفتوحة\n\n" +
+    "يرجى كتابة تفاصيل طلبك وانتظار الإدارة."
   );
 
   const buttons = new ActionRowBuilder().addComponents(
@@ -279,22 +290,22 @@ async function createTicket(interaction, type) {
     components: [buttons]
   });
 
-  await interaction.reply({
-    content: `تم فتح تذكرتك بنجاح: ${channel}`,
+  return interaction.reply({
+    content: `تم فتح تذكرتك: ${channel}`,
     ephemeral: true
   });
 }
 
-// ===============================
-// ADMIN PANEL
-// ===============================
+// =================================
+// ADMIN CONTROL PANEL
+// =================================
 
 async function sendAdminPanel(channel) {
   const embed = makeEmbed(
     "DARK SYSTEM",
     "**ADMIN CONTROL PANEL**\n\n" +
     "مرحباً بك في لوحة تحكم الإدارة.\n" +
-    "اختر الخدمة المطلوبة من الأزرار بالأسفل."
+    "اختر الخدمة المطلوبة من الأسفل."
   );
 
   const row = new ActionRowBuilder().addComponents(
@@ -323,30 +334,33 @@ async function sendAdminPanel(channel) {
   });
 }
 
-// ===============================
+// =================================
 // INTERACTIONS
-// ===============================
+// =================================
 
 client.on(Events.InteractionCreate, async interaction => {
   try {
 
-    // TICKET SELECT MENU
+    // TICKET SELECT
 
     if (
       interaction.isStringSelectMenu() &&
       interaction.customId === "ticket_select"
     ) {
-      return createTicket(interaction, interaction.values[0]);
+      return await createTicket(
+        interaction,
+        interaction.values[0]
+      );
     }
 
     // BUTTONS
 
     if (interaction.isButton()) {
 
-      // CLAIM TICKET
+      // CLAIM
 
       if (interaction.customId.startsWith("claim_")) {
-        if (!isStaff(interaction.member)) {
+        if (!isStaff(interaction)) {
           return interaction.reply({
             content: "ليس لديك صلاحية استلام التذاكر.",
             ephemeral: true
@@ -358,7 +372,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         if (!ticket || !ticket.open) {
           return interaction.reply({
-            content: "هذه التذكرة غير متاحة.",
+            content: "التذكرة غير متاحة.",
             ephemeral: true
           });
         }
@@ -374,15 +388,14 @@ client.on(Events.InteractionCreate, async interaction => {
         saveDB();
 
         return interaction.reply({
-          content: `تم استلام التذكرة بواسطة ${interaction.user}`,
-          allowedMentions: { users: [interaction.user.id] }
+          content: `تم استلام التذكرة بواسطة ${interaction.user}.`
         });
       }
 
-      // CLOSE TICKET
+      // CLOSE
 
       if (interaction.customId.startsWith("close_")) {
-        if (!isStaff(interaction.member)) {
+        if (!isStaff(interaction)) {
           return interaction.reply({
             content: "ليس لديك صلاحية إغلاق التذاكر.",
             ephemeral: true
@@ -402,14 +415,15 @@ client.on(Events.InteractionCreate, async interaction => {
         ticket.open = false;
         ticket.closedBy = interaction.user.id;
         ticket.closedAt = Date.now();
+
         saveDB();
 
-        const logChannel = interaction.guild.channels.cache.get(
+        const log = interaction.guild.channels.cache.get(
           CONFIG.LOG_CHANNEL_ID
         );
 
-        if (logChannel) {
-          await logChannel.send({
+        if (log) {
+          await log.send({
             embeds: [
               makeEmbed(
                 `TICKET-${number} — CLOSED`,
@@ -433,15 +447,9 @@ client.on(Events.InteractionCreate, async interaction => {
         return;
       }
 
-      // ADMIN PERMISSION
+      // STATISTICS
 
-      const isStats = interaction.customId === "admin_stats";
-      const isPoints = [
-        "admin_add",
-        "admin_remove"
-      ].includes(interaction.customId);
-
-      if (isStats) {
+      if (interaction.customId === "admin_stats") {
         if (
           !isOwner(interaction) &&
           !hasRole(interaction.member, CONFIG.STATS_ROLE_IDS)
@@ -453,24 +461,27 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         const tickets = Object.values(db.tickets);
-        const open = tickets.filter(t => t.open).length;
-        const closed = tickets.filter(t => !t.open).length;
-
-        const embed = makeEmbed(
-          "DARK SYSTEM — STATISTICS",
-          `**إجمالي التذاكر:** ${tickets.length}\n` +
-          `**التذاكر المفتوحة:** ${open}\n` +
-          `**التذاكر المغلقة:** ${closed}\n` +
-          `**الأعضاء المسجلون بالنقاط:** ${Object.keys(db.points).length}`
-        );
 
         return interaction.reply({
-          embeds: [embed],
+          embeds: [
+            makeEmbed(
+              "DARK SYSTEM — STATISTICS",
+              `**إجمالي التذاكر:** ${tickets.length}\n` +
+              `**المفتوحة:** ${tickets.filter(t => t.open).length}\n` +
+              `**المغلقة:** ${tickets.filter(t => !t.open).length}\n` +
+              `**الأعضاء المسجلون بالنقاط:** ${Object.keys(db.points).length}`
+            )
+          ],
           ephemeral: true
         });
       }
 
-      if (isPoints) {
+      // POINTS PERMISSIONS
+
+      if (
+        interaction.customId === "admin_add" ||
+        interaction.customId === "admin_remove"
+      ) {
         if (
           !isOwner(interaction) &&
           !hasRole(interaction.member, CONFIG.POINTS_ROLE_IDS)
@@ -481,9 +492,8 @@ client.on(Events.InteractionCreate, async interaction => {
           });
         }
 
-        const action = interaction.customId === "admin_add"
-          ? "add"
-          : "remove";
+        const action =
+          interaction.customId === "admin_add" ? "add" : "remove";
 
         const modal = new ModalBuilder()
           .setCustomId(`points_${action}`)
@@ -492,14 +502,12 @@ client.on(Events.InteractionCreate, async interaction => {
         const userInput = new TextInputBuilder()
           .setCustomId("user_id")
           .setLabel("ID العضو")
-          .setPlaceholder("123456789012345678")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
         const amountInput = new TextInputBuilder()
           .setCustomId("amount")
           .setLabel("عدد النقاط")
-          .setPlaceholder("مثال: 10")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
@@ -520,7 +528,9 @@ client.on(Events.InteractionCreate, async interaction => {
     ) {
       const action = interaction.customId.split("_")[1];
 
-      const userId = interaction.fields.getTextInputValue("user_id").trim();
+      const userId = interaction.fields
+        .getTextInputValue("user_id").trim();
+
       const amount = Number(
         interaction.fields.getTextInputValue("amount")
       );
@@ -541,14 +551,13 @@ client.on(Events.InteractionCreate, async interaction => {
 
       if (action === "remove" && current < amount) {
         return interaction.reply({
-          content: "رصيد العضو لا يكفي لخصم هذه النقاط.",
+          content: "رصيد العضو لا يكفي.",
           ephemeral: true
         });
       }
 
-      db.points[userId] = action === "add"
-        ? current + amount
-        : current - amount;
+      db.points[userId] =
+        action === "add" ? current + amount : current - amount;
 
       saveDB();
 
@@ -562,9 +571,13 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
   } catch (error) {
-    console.error(error);
+    console.error("Interaction Error:", error);
 
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+    if (
+      interaction.isRepliable() &&
+      !interaction.replied &&
+      !interaction.deferred
+    ) {
       await interaction.reply({
         content: "حدث خطأ أثناء تنفيذ العملية.",
         ephemeral: true
@@ -573,42 +586,50 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 });
 
-// ===============================
+// =================================
 // SETUP COMMANDS
-// ===============================
+// =================================
 
 client.on(Events.MessageCreate, async message => {
   if (message.author.bot || !message.guild) return;
 
-  if (!message.content.startsWith(PREFIX)) return;
-
-  if (
-    message.content === `${PREFIX}setup-tickets` ||
-    message.content === `${PREFIX}setup-admin`
-  ) {
-    if (
-      message.author.id !== message.guild.ownerId &&
-      !OWNER_IDS.includes(message.author.id)
-    ) {
+  if (message.content === `${PREFIX}setup-tickets`) {
+    if (message.author.id !== message.guild.ownerId &&
+        !OWNER_IDS.includes(message.author.id)) {
       return message.reply("هذا الأمر مخصص لمالك السيرفر.");
     }
 
-    if (message.content === `${PREFIX}setup-tickets`) {
-      return sendTicketPanel(message.channel);
+    return sendTicketPanel(message.channel);
+  }
+
+  if (message.content === `${PREFIX}setup-admin`) {
+    if (message.author.id !== message.guild.ownerId &&
+        !OWNER_IDS.includes(message.author.id)) {
+      return message.reply("هذا الأمر مخصص لمالك السيرفر.");
     }
 
-    if (message.content === `${PREFIX}setup-admin`) {
-      return sendAdminPanel(message.channel);
-    }
+    return sendAdminPanel(message.channel);
   }
 });
 
-// ===============================
-// READY
-// ===============================
+// =================================
+// BOT READY
+// =================================
 
 client.once(Events.ClientReady, () => {
   console.log(`DARK SYSTEM ONLINE: ${client.user.tag}`);
 });
 
-client.login(TOKEN);
+// =================================
+// LOGIN
+// =================================
+
+if (!TOKEN) {
+  console.error("ERROR: DISCORD_TOKEN is missing!");
+  process.exit(1);
+}
+
+client.login(TOKEN).catch(error => {
+  console.error("LOGIN ERROR:", error);
+  process.exit(1);
+});
