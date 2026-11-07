@@ -22,7 +22,10 @@ const fs = require("fs");
 // DARK SYSTEM CONFIGURATION
 // =================================
 
-const TOKEN = process.env.DISCORD_TOKEN;
+const TOKEN = (process.env.DISCORD_TOKEN || "").trim();
+
+console.log("TOKEN CHECK:", TOKEN.length > 0 ? "FOUND" : "MISSING");
+console.log("TOKEN LENGTH:", TOKEN.length);
 
 const PREFIX = "!";
 
