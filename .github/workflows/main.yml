@@ -1,13 +1,14 @@
+
 name: Dark System Bot
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  run:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,9 +21,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: |
-          npm init -y
-          npm install discord.js
+        run: npm install
 
       - name: Start Bot
         run: node index.js
