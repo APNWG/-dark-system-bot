@@ -1,312 +1,614 @@
 const {
   Client,
   GatewayIntentBits,
-  PermissionFlagsBits,
-  ChannelType,
+  Partials,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
+  ChannelType,
+  PermissionFlagsBits,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle
+  TextInputStyle,
+  Events
 } = require("discord.js");
 
-// ===== SETTINGS =====
+const fs = require("fs");
 
-const TOKEN = process.env.DISCORD_TOKEN;
+// ===============================
+// DARK SYSTEM CONFIG
+// ===============================
 
-const SERVER_IMAGE =
-  "https://drive.google.com/uc?export=view&id=1AMEx75lF514kzetubUzbfdCVn9j2NGPz";
+const TOKEN = "PUT_BOT_TOKEN_HERE";
+const PREFIX = "!";
 
-const TICKET_PANEL_CHANNEL = "1527435580970111076";
-const TICKET_CATEGORY = "1527671262611243088";
-const ADMIN_PANEL_CHANNEL = "1568363505222942890";
+const OWNER_IDS = [];
 
-const ADMIN_ROLE_IDS = [
-  "1527328350648140007",
-  "1526287746170355782",
-  "1568280573493903523",
-  "1568281775422312589",
-  "1568282755144359966",
-  "1568283406226432182",
-  "1568283523339653181",
-  "1568283586631565312",
-  "1568283708048408666",
-  "1568283799169663158",
-  "1568283862549921982",
-  "1568283970662309978",
-  "1568285495719362580"
-];
+const CONFIG = {
+  TICKET_CATEGORY_ID: "PUT_CATEGORY_ID",
+  LOG_CHANNEL_ID: "PUT_LOG_CHANNEL_ID",
 
-// ===== TEMPORARY DATA =====
+  SUPPORT_ROLE_IDS: [
+    "PUT_SUPPORT_ROLE_ID"
+  ],
 
-const points = new Map();
-const openTickets = new Map();
-const transactions = [];
+  STATS_ROLE_IDS: [
+    "PUT_ADMIN_ROLE_ID"
+  ],
 
-let ticketNumber = 0;
-let totalAdded = 0;
-let totalRemoved = 0;
+  POINTS_ROLE_IDS: [
+    "PUT_POINTS_ROLE_ID"
+  ],
 
-// ===== BOT =====
+  PANEL_IMAGE_URL: ""
+};
+
+// ===============================
+// DATABASE
+// ===============================
+
+const DB_FILE = "./dark-system-data.json";
+
+let db = {
+  ticketNumber: 0,
+  tickets: {},
+  points: {}
+};
+
+if (fs.existsSync(DB_FILE)) {
+  try {
+    db = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+  } catch (error) {
+    console.error("Database error:", error);
+  }
+}
+
+function saveDB() {
+  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+}
+
+// ===============================
+// BOT
+// ===============================
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
-  ]
+    GatewayIntentBits.MessageContent
+  ],
+  partials: [Partials.Channel]
 });
 
-function isAdmin(member) {
-  return member.permissions.has(
-    PermissionFlagsBits.Administrator
-  ) || ADMIN_ROLE_IDS.some(id => member.roles.cache.has(id));
+const COLORS = {
+  BLACK: 0x080808,
+  WHITE: 0xffffff,
+  BLUE: 0x237bff
+};
+
+function isOwner(interaction) {
+  return OWNER_IDS.includes(interaction.user.id) ||
+    interaction.guild.ownerId === interaction.user.id;
 }
 
-function getPoints(id) {
-  return points.get(id) || 0;
+function hasRole(member, roles) {
+  return roles.some(id => member.roles.cache.has(id));
+}
+
+function isStaff(member) {
+  return isOwner({
+    user: member.user,
+    guild: member.guild
+  }) || hasRole(member, CONFIG.SUPPORT_ROLE_IDS);
 }
 
 function makeEmbed(title, description) {
-  return new EmbedBuilder()
-    .setColor("#101010")
+  const embed = new EmbedBuilder()
+    .setColor(COLORS.BLACK)
     .setTitle(title)
     .setDescription(description)
-    .setImage(SERVER_IMAGE)
     .setFooter({ text: "DARK SYSTEM" })
     .setTimestamp();
+
+  if (CONFIG.PANEL_IMAGE_URL) {
+    embed.setImage(CONFIG.PANEL_IMAGE_URL);
+  }
+
+  return embed;
 }
 
-// ===== PANELS =====
+// ===============================
+// TICKET PANEL
+// ===============================
 
-function ticketPanel() {
+async function sendTicketPanel(channel) {
   const embed = makeEmbed(
     "DARK SYSTEM — TICKET PANEL",
     "الرجاء الضغط على الخيار الموجود بالأسفل لإظهار جميع أنواع التذاكر.\n\nيُرجى اختيار القسم الصحيح."
   );
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("ticket_open_menu")
-      .setLabel("فتح قائمة التذاكر")
-      .setEmoji("🎫")
-      .setStyle(ButtonStyle.Secondary)
-  );
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId("ticket_select")
+    .setPlaceholder("اختر نوع التذكرة")
+    .addOptions(
+      {
+        label: "INQUIRY",
+        description: "استفسار",
+        value: "INQUIRY",
+        emoji: "❓"
+      },
+      {
+        label: "COMPLAINT",
+        description: "شكوى",
+        value: "COMPLAINT",
+        emoji: "📝"
+      },
+      {
+        label: "REPORT A MEMBER",
+        description: "بلاغ على عضو",
+        value: "REPORT",
+        emoji: "🚨"
+      },
+      {
+        label: "REQUEST HELP",
+        description: "طلب مساعدة",
+        value: "HELP",
+        emoji: "🛠️"
+      }
+    );
 
-  return { embeds: [embed], components: [row] };
+  await channel.send({
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(menu)
+    ]
+  });
 }
 
-function adminPanel() {
+// ===============================
+// CREATE TICKET
+// ===============================
+
+async function createTicket(interaction, type) {
+  const userId = interaction.user.id;
+
+  const existing = Object.values(db.tickets).find(
+    t => t.userId === userId && t.open
+  );
+
+  if (existing) {
+    return interaction.reply({
+      content: `لديك تذكرة مفتوحة بالفعل: <#${existing.channelId}>`,
+      ephemeral: true
+    });
+  }
+
+  const category = interaction.guild.channels.cache.get(
+    CONFIG.TICKET_CATEGORY_ID
+  );
+
+  if (!category || category.type !== ChannelType.GuildCategory) {
+    return interaction.reply({
+      content: "لم يتم إعداد قسم التذاكر بشكل صحيح.",
+      ephemeral: true
+    });
+  }
+
+  db.ticketNumber++;
+
+  const number = String(db.ticketNumber).padStart(3, "0");
+  const ticketName = `ticket-${number}`;
+
+  const channel = await interaction.guild.channels.create({
+    name: ticketName,
+    type: ChannelType.GuildText,
+    parent: category.id,
+    topic: `TICKET-${number} | ${userId}`,
+    permissionOverwrites: [
+      {
+        id: interaction.guild.id,
+        deny: [PermissionFlagsBits.ViewChannel]
+      },
+      {
+        id: userId,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory
+        ]
+      },
+      ...CONFIG.SUPPORT_ROLE_IDS.map(roleId => ({
+        id: roleId,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory
+        ]
+      })),
+      {
+        id: client.user.id,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ManageChannels
+        ]
+      }
+    ]
+  });
+
+  db.tickets[number] = {
+    number,
+    channelId: channel.id,
+    userId,
+    type,
+    open: true,
+    claimedBy: null,
+    createdAt: Date.now()
+  };
+
+  saveDB();
+
   const embed = makeEmbed(
-    "DARK SYSTEM",
-    "ADMIN CONTROL PANEL"
+    `TICKET-${number}`,
+    `**صاحب التذكرة:** <@${userId}>\n` +
+    `**القسم:** ${type}\n` +
+    `**الحالة:** مفتوحة\n\n` +
+    "يرجى كتابة تفاصيل طلبك وانتظار أحد أفراد الإدارة."
   );
 
-  const row = new ActionRowBuilder().addComponents(
+  const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("admin_open_menu")
-      .setLabel("اختر الخدمة")
-      .setEmoji("⚙️")
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  return { embeds: [embed], components: [row] };
-}
-
-// ===== READY =====
-
-client.once("ready", () => {
-  console.log(`DARK SYSTEM ONLINE: ${client.user.tag}`);
-});
-
-// ===== SETUP COMMAND =====
-
-client.on("messageCreate", async message => {
-  if (message.author.bot) return;
-  if (message.content !== "!setup") return;
-
-  if (!isAdmin(message.member)) {
-    return message.reply("ليس لديك صلاحية استخدام هذا الأمر.");
-  }
-
-  try {
-    const ticketChannel = await client.channels.fetch(
-      TICKET_PANEL_CHANNEL
-    );
-
-    const adminChannel = await client.channels.fetch(
-      ADMIN_PANEL_CHANNEL
-    );
-
-    await ticketChannel.send(ticketPanel());
-    await adminChannel.send(adminPanel());
-
-    await message.reply("تم إرسال لوحة التذاكر ولوحة الإدارة.");
-  } catch (error) {
-    console.error(error);
-    await message.reply("حدث خطأ. تأكد من صلاحيات البوت والرومات.");
-  }
-});
-
-// ===== TICKET MENU =====
-
-function ticketMenu() {
-  return new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId("ticket_select")
-      .setPlaceholder("اختر نوع التذكرة")
-      .addOptions(
-        {
-          label: "INQUIRY",
-          description: "استفسار",
-          value: "INQUIRY",
-          emoji: "❓"
-        },
-        {
-          label: "COMPLAINT",
-          description: "شكوى",
-          value: "COMPLAINT",
-          emoji: "📝"
-        },
-        {
-          label: "REPORT A MEMBER",
-          description: "بلاغ على عضو",
-          value: "REPORT",
-          emoji: "🚨"
-        },
-        {
-          label: "REQUEST HELP",
-          description: "طلب مساعدة",
-          value: "HELP",
-          emoji: "🛠️"
-        }
-      )
-  );
-}
-
-// ===== ADMIN MENU =====
-
-function adminMenu() {
-  return new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId("admin_select")
-      .setPlaceholder("اختر الخدمة")
-      .addOptions(
-        {
-          label: "My Points",
-          description: "عرض نقاطك",
-          value: "my_points",
-          emoji: "🎖️"
-        },
-        {
-          label: "Add Points",
-          description: "إضافة نقاط لإداري",
-          value: "add_points",
-          emoji: "➕"
-        },
-        {
-          label: "Remove Points",
-          description: "خصم نقاط من إداري",
-          value: "remove_points",
-          emoji: "➖"
-        },
-        {
-          label: "Admin Statistics",
-          description: "إحصائيات الإدارة",
-          value: "admin_stats",
-          emoji: "📊"
-        }
-      )
-  );
-}
-
-// ===== POINTS MODALS =====
-
-function pointsModal(action) {
-  const modal = new ModalBuilder()
-    .setCustomId(`points_${action}`)
-    .setTitle(
-      action === "add" ? "إضافة نقاط" : "خصم نقاط"
-    );
-
-  const userInput = new TextInputBuilder()
-    .setCustomId("target_id")
-    .setLabel("ايدي الإداري")
-    .setPlaceholder("ضع ايدي الإداري هنا")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true);
-
-  const amountInput = new TextInputBuilder()
-    .setCustomId("amount")
-    .setLabel("عدد النقاط")
-    .setPlaceholder("مثال: 5")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true);
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(userInput),
-    new ActionRowBuilder().addComponents(amountInput)
-  );
-
-  return modal;
-}
-
-// ===== TICKET BUTTONS =====
-
-function ticketControls() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("ticket_claim")
+      .setCustomId(`claim_${number}`)
       .setLabel("استلام التذكرة")
       .setEmoji("📌")
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
-      .setCustomId("ticket_close")
+      .setCustomId(`close_${number}`)
       .setLabel("إغلاق التذكرة")
       .setEmoji("🔒")
       .setStyle(ButtonStyle.Danger)
   );
+
+  await channel.send({
+    content: `<@${userId}>`,
+    embeds: [embed],
+    components: [buttons]
+  });
+
+  await interaction.reply({
+    content: `تم فتح تذكرتك بنجاح: ${channel}`,
+    ephemeral: true
+  });
 }
 
+// ===============================
+// ADMIN PANEL
+// ===============================
+
+async function sendAdminPanel(channel) {
+  const embed = makeEmbed(
+    "DARK SYSTEM",
+    "**ADMIN CONTROL PANEL**\n\n" +
+    "مرحباً بك في لوحة تحكم الإدارة.\n" +
+    "اختر الخدمة المطلوبة من الأزرار بالأسفل."
+  );
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("admin_stats")
+      .setLabel("الإحصائيات")
+      .setEmoji("📊")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("admin_add")
+      .setLabel("إضافة نقاط")
+      .setEmoji("➕")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId("admin_remove")
+      .setLabel("خصم نقاط")
+      .setEmoji("➖")
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  await channel.send({
+    embeds: [embed],
+    components: [row]
+  });
+}
+
+// ===============================
+// INTERACTIONS
+// ===============================
+
+client.on(Events.InteractionCreate, async interaction => {
+  try {
+
+    // TICKET SELECT MENU
+
+    if (
+      interaction.isStringSelectMenu() &&
+      interaction.customId === "ticket_select"
+    ) {
+      return createTicket(interaction, interaction.values[0]);
+    }
+
+    // BUTTONS
+
+    if (interaction.isButton()) {
+
+      // CLAIM TICKET
+
+      if (interaction.customId.startsWith("claim_")) {
+        if (!isStaff(interaction.member)) {
+          return interaction.reply({
+            content: "ليس لديك صلاحية استلام التذاكر.",
+            ephemeral: true
+          });
+        }
+
+        const number = interaction.customId.split("_")[1];
+        const ticket = db.tickets[number];
+
+        if (!ticket || !ticket.open) {
+          return interaction.reply({
+            content: "هذه التذكرة غير متاحة.",
+            ephemeral: true
+          });
+        }
+
+        if (ticket.claimedBy) {
+          return interaction.reply({
+            content: `التذكرة مستلمة من <@${ticket.claimedBy}>`,
+            ephemeral: true
+          });
+        }
+
+        ticket.claimedBy = interaction.user.id;
+        saveDB();
+
         return interaction.reply({
-          content: "الإدارة فقط تستطيع إغلاق التذاكر.",
+          content: `تم استلام التذكرة بواسطة ${interaction.user}`,
+          allowedMentions: { users: [interaction.user.id] }
+        });
+      }
+
+      // CLOSE TICKET
+
+      if (interaction.customId.startsWith("close_")) {
+        if (!isStaff(interaction.member)) {
+          return interaction.reply({
+            content: "ليس لديك صلاحية إغلاق التذاكر.",
+            ephemeral: true
+          });
+        }
+
+        const number = interaction.customId.split("_")[1];
+        const ticket = db.tickets[number];
+
+        if (!ticket || !ticket.open) {
+          return interaction.reply({
+            content: "التذكرة مغلقة بالفعل.",
+            ephemeral: true
+          });
+        }
+
+        ticket.open = false;
+        ticket.closedBy = interaction.user.id;
+        ticket.closedAt = Date.now();
+        saveDB();
+
+        const logChannel = interaction.guild.channels.cache.get(
+          CONFIG.LOG_CHANNEL_ID
+        );
+
+        if (logChannel) {
+          await logChannel.send({
+            embeds: [
+              makeEmbed(
+                `TICKET-${number} — CLOSED`,
+                `**العضو:** <@${ticket.userId}>\n` +
+                `**القسم:** ${ticket.type}\n` +
+                `**استلمها:** ${ticket.claimedBy ? `<@${ticket.claimedBy}>` : "لم يتم استلامها"}\n` +
+                `**أغلقها:** ${interaction.user}`
+              )
+            ]
+          });
+        }
+
+        await interaction.reply({
+          content: "تم إغلاق التذكرة. سيتم حذف القناة بعد 5 ثوانٍ."
+        });
+
+        setTimeout(() => {
+          interaction.channel.delete().catch(() => {});
+        }, 5000);
+
+        return;
+      }
+
+      // ADMIN PERMISSION
+
+      const isStats = interaction.customId === "admin_stats";
+      const isPoints = [
+        "admin_add",
+        "admin_remove"
+      ].includes(interaction.customId);
+
+      if (isStats) {
+        if (
+          !isOwner(interaction) &&
+          !hasRole(interaction.member, CONFIG.STATS_ROLE_IDS)
+        ) {
+          return interaction.reply({
+            content: "ليس لديك صلاحية عرض الإحصائيات.",
+            ephemeral: true
+          });
+        }
+
+        const tickets = Object.values(db.tickets);
+        const open = tickets.filter(t => t.open).length;
+        const closed = tickets.filter(t => !t.open).length;
+
+        const embed = makeEmbed(
+          "DARK SYSTEM — STATISTICS",
+          `**إجمالي التذاكر:** ${tickets.length}\n` +
+          `**التذاكر المفتوحة:** ${open}\n` +
+          `**التذاكر المغلقة:** ${closed}\n` +
+          `**الأعضاء المسجلون بالنقاط:** ${Object.keys(db.points).length}`
+        );
+
+        return interaction.reply({
+          embeds: [embed],
           ephemeral: true
         });
       }
 
-      const ownerMatch = interaction.channel.topic?.match(/ticket-owner:(\d+)/);
+      if (isPoints) {
+        if (
+          !isOwner(interaction) &&
+          !hasRole(interaction.member, CONFIG.POINTS_ROLE_IDS)
+        ) {
+          return interaction.reply({
+            content: "ليس لديك صلاحية إدارة النقاط.",
+            ephemeral: true
+          });
+        }
 
-      if (ownerMatch) {
-        openTickets.delete(ownerMatch[1]);
+        const action = interaction.customId === "admin_add"
+          ? "add"
+          : "remove";
+
+        const modal = new ModalBuilder()
+          .setCustomId(`points_${action}`)
+          .setTitle(action === "add" ? "إضافة نقاط" : "خصم نقاط");
+
+        const userInput = new TextInputBuilder()
+          .setCustomId("user_id")
+          .setLabel("ID العضو")
+          .setPlaceholder("123456789012345678")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+
+        const amountInput = new TextInputBuilder()
+          .setCustomId("amount")
+          .setLabel("عدد النقاط")
+          .setPlaceholder("مثال: 10")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(userInput),
+          new ActionRowBuilder().addComponents(amountInput)
+        );
+
+        return interaction.showModal(modal);
+      }
+    }
+
+    // POINTS MODAL
+
+    if (
+      interaction.isModalSubmit() &&
+      interaction.customId.startsWith("points_")
+    ) {
+      const action = interaction.customId.split("_")[1];
+
+      const userId = interaction.fields.getTextInputValue("user_id").trim();
+      const amount = Number(
+        interaction.fields.getTextInputValue("amount")
+      );
+
+      if (
+        !/^\d{17,20}$/.test(userId) ||
+        !Number.isSafeInteger(amount) ||
+        amount <= 0 ||
+        amount > 100000
+      ) {
+        return interaction.reply({
+          content: "تأكد من ID العضو وعدد النقاط.",
+          ephemeral: true
+        });
       }
 
-      await interaction.reply("🔒 سيتم إغلاق التذكرة وحذف الروم.");
+      const current = db.points[userId] || 0;
 
-      await interaction.channel.delete();
-      return;
+      if (action === "remove" && current < amount) {
+        return interaction.reply({
+          content: "رصيد العضو لا يكفي لخصم هذه النقاط.",
+          ephemeral: true
+        });
+      }
+
+      db.points[userId] = action === "add"
+        ? current + amount
+        : current - amount;
+
+      saveDB();
+
+      return interaction.reply({
+        content:
+          `تم ${action === "add" ? "إضافة" : "خصم"} ${amount} نقطة.\n` +
+          `العضو: <@${userId}>\n` +
+          `الرصيد الحالي: **${db.points[userId]}**`,
+        ephemeral: true
+      });
     }
 
   } catch (error) {
-    console.error("Interaction Error:", error);
+    console.error(error);
 
     if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
       await interaction.reply({
-        content: "حدث خطأ أثناء تنفيذ الطلب.",
+        content: "حدث خطأ أثناء تنفيذ العملية.",
         ephemeral: true
       }).catch(() => {});
     }
   }
 });
 
-// ===== START BOT =====
+// ===============================
+// SETUP COMMANDS
+// ===============================
 
-if (!TOKEN) {
-  throw new Error("DISCORD_TOKEN غير موجود في GitHub Secrets");
-}
+client.on(Events.MessageCreate, async message => {
+  if (message.author.bot || !message.guild) return;
+
+  if (!message.content.startsWith(PREFIX)) return;
+
+  if (
+    message.content === `${PREFIX}setup-tickets` ||
+    message.content === `${PREFIX}setup-admin`
+  ) {
+    if (
+      message.author.id !== message.guild.ownerId &&
+      !OWNER_IDS.includes(message.author.id)
+    ) {
+      return message.reply("هذا الأمر مخصص لمالك السيرفر.");
+    }
+
+    if (message.content === `${PREFIX}setup-tickets`) {
+      return sendTicketPanel(message.channel);
+    }
+
+    if (message.content === `${PREFIX}setup-admin`) {
+      return sendAdminPanel(message.channel);
+    }
+  }
+});
+
+// ===============================
+// READY
+// ===============================
+
+client.once(Events.ClientReady, () => {
+  console.log(`DARK SYSTEM ONLINE: ${client.user.tag}`);
+});
 
 client.login(TOKEN);
