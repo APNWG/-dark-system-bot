@@ -214,22 +214,20 @@ async function createTicket(interaction, type) {
   );
 
   if (existing) {
-    return interaction.reply({
-      content: `لديك تذكرة مفتوحة بالفعل: <#${existing.channelId}>`,
-      ephemeral: true
-    });
-  }
+  return interaction.editReply({
+    content: `لديك تذكرة مفتوحة بالفعل: <#${existing.channelId}>`
+  });
+}
 
   const category = interaction.guild.channels.cache.get(
     CONFIG.TICKET_CATEGORY_ID
   );
 
   if (!category || category.type !== ChannelType.GuildCategory) {
-    return interaction.reply({
-      content: "إعداد قسم التذاكر غير صحيح.",
-      ephemeral: true
-    });
-  }
+  return interaction.editReply({
+    content: "إعداد قسم التذاكر غير صحيح."
+  });
+}
 
   db.ticketNumber++;
 
@@ -312,11 +310,9 @@ async function createTicket(interaction, type) {
     components: [buttons]
   });
 
-  return interaction.reply({
-    content: `تم فتح تذكرتك: ${channel}`,
-    ephemeral: true
-  });
-}
+  return interaction.editReply({
+  content: `تم فتح تذكرتك: ${channel}`
+});
 
 // =================================
 // ADMIN CONTROL PANEL
