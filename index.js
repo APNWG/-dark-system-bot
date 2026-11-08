@@ -384,14 +384,16 @@ client.on(Events.InteractionCreate, async interaction => {
     // TICKET SELECT
 
     if (
-      interaction.isStringSelectMenu() &&
-      interaction.customId === "ticket_select"
-    ) {
-      return await createTicket(
-        interaction,
-        interaction.values[0]
-      );
-    }
+  interaction.isStringSelectMenu() &&
+  interaction.customId === "ticket_select"
+) {
+  await interaction.deferReply({ ephemeral: true });
+
+  return await createTicket(
+    interaction,
+    interaction.values[0]
+  );
+}
 
     // ADMIN MENU SELECT
 
