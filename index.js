@@ -681,15 +681,17 @@ client.on(Events.InteractionCreate, async interaction => {
   } catch (error) {
     console.error("Interaction Error:", error);
 
-    if (
-      interaction.isRepliable() &&
-      !interaction.replied &&
-      !interaction.deferred
-    ) {
-      await interaction.reply({
-        content: "حدث خطأ أثناء تنفيذ العملية.",
-        ephemeral: true
-      }).catch(() => {});
+    if (interaction.isRepliable()) {
+      if (interaction.deferred) {
+        await interaction.editReply({
+          content: "حدث خطأ أثناء تنفيذ العملية."
+        }).catch(() => {});
+      } else if (!interaction.replied) {
+        await interaction.reply({
+          content: "حدث خطأ أثناء تنفيذ العملية.",
+          ephemeral: true
+        }).catch(() => {});
+      }
     }
   }
 });
