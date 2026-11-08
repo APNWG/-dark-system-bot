@@ -640,36 +640,29 @@ client.on(Events.InteractionCreate, async interaction => {
     // POINTS MODAL
 
     if (
-      interaction.isModalSubmit() &&
-      interaction.customId.startsWith("points_")
-    ) {
-      const action = interaction.customId.split("_")[1];
+  interaction.isModalSubmit() &&
+  interaction.customId.startsWith("points_")
+) {
+  await interaction.deferReply({ ephemeral: true });
 
-      const userId = interaction.fields
-        .getTextInputValue("user_id").trim();
+  const action = interaction.customId.split("_")[1];
 
-      const amount = Number(
-        interaction.fields.getTextInputValue("amount")
-      );
-
-      if (
+            if (
         !/^\d{17,20}$/.test(userId) ||
         !Number.isSafeInteger(amount) ||
         amount <= 0 ||
         amount > 100000
       ) {
-        return interaction.reply({
-          content: "تأكد من ID العضو وعدد النقاط.",
-          ephemeral: true
+        return interaction.editReply({
+          content: "تأكد من ID العضو وعدد النقاط."
         });
       }
 
       const current = db.points[userId] || 0;
 
       if (action === "remove" && current < amount) {
-        return interaction.reply({
-          content: "رصيد العضو لا يكفي.",
-          ephemeral: true
+        return interaction.editReply({
+          content: "رصيد العضو لا يكفي."
         });
       }
 
@@ -678,14 +671,12 @@ client.on(Events.InteractionCreate, async interaction => {
 
       saveDB();
 
-      return interaction.reply({
+      return interaction.editReply({
         content:
           `تم ${action === "add" ? "إضافة" : "خصم"} ${amount} نقطة.\n` +
           `العضو: <@${userId}>\n` +
-          `الرصيد الحالي: **${db.points[userId]}**`,
-        ephemeral: true
+          `الرصيد الحالي: **${db.points[userId]}**`
       });
-    }
 
   } catch (error) {
     console.error("Interaction Error:", error);
