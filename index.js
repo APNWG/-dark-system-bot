@@ -22,11 +22,10 @@ const fs = require("fs");
 // =================================
 
 const TOKEN = (process.env.DISCORD_TOKEN || "").trim();
+const PREFIX = "!";
 
 console.log("TOKEN CHECK:", TOKEN.length > 0 ? "FOUND" : "MISSING");
 console.log("TOKEN LENGTH:", TOKEN.length);
-
-const PREFIX = "!";
 
 const OWNER_IDS = [
   "PUT_OWNER_ID"
@@ -57,12 +56,16 @@ let db = {
 
 if (fs.existsSync(DB_FILE)) {
   try {
+    const saved = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+
     db = {
       ...db,
-      ...JSON.parse(fs.readFileSync(DB_FILE, "utf8"))
+      ...saved,
+      tickets: saved.tickets || {},
+      points: saved.points || {}
     };
-  } catch (e) {
-    console.log("Database could not be loaded.");
+  } catch (error) {
+    console.log("Database could not be loaded:", error);
   }
 }
 
@@ -214,20 +217,20 @@ async function createTicket(interaction, type) {
   );
 
   if (existing) {
-  return interaction.editReply({
-    content: `لديك تذكرة مفتوحة بالفعل: <#${existing.channelId}>`
-  });
-}
+    return interaction.editReply({
+      content: `لديك تذكرة مفتوحة بالفعل: <#${existing.channelId}>`
+    });
+  }
 
   const category = interaction.guild.channels.cache.get(
     CONFIG.TICKET_CATEGORY_ID
   );
 
   if (!category || category.type !== ChannelType.GuildCategory) {
-  return interaction.editReply({
-    content: "إعداد قسم التذاكر غير صحيح."
-  });
-}
+    return interaction.editReply({
+      content: "إعداد قسم التذاكر غير صحيح."
+    });
+  }
 
   db.ticketNumber++;
 
@@ -311,8 +314,9 @@ async function createTicket(interaction, type) {
   });
 
   return interaction.editReply({
-  content: `تم فتح تذكرتك: ${channel}`
-});
+    content: `تم فتح تذكرتك: ${channel}`
+  });
+}
 
 // =================================
 // ADMIN CONTROL PANEL
@@ -322,7 +326,7 @@ async function sendAdminPanel(channel) {
   const embed = makeEmbed(
     "DARK SYSTEM",
     "**ADMIN CONTROL PANEL**\n\n" +
-    "الرجاء الظغط على خيار الذي في الاسفل لاظهار لوحة تحكم الادارة\n\n" +
+    "الرجاء الضغط على الخيار الذي في الأسفل لإظهار لوحة تحكم الإدارة.\n\n" +
     "قم باختيار الزر الصحيح."
   );
 
@@ -380,16 +384,16 @@ client.on(Events.InteractionCreate, async interaction => {
     // TICKET SELECT
 
     if (
-  interaction.isStringSelectMenu() &&
-  interaction.customId === "ticket_select"
-) {
-  await interaction.deferReply({ ephemeral: true });
+      interaction.isStringSelectMenu() &&
+      interaction.customId === "ticket_select"
+    ) {
+      await interaction.deferReply({ ephemeral: true });
 
-  return await createTicket(
-    interaction,
-    interaction.values[0]
-  );
-}
+      return await createTicket(
+        interaction,
+        interaction.values[0]
+      );
+    }
 
     // ADMIN MENU SELECT
 
@@ -640,14 +644,37 @@ client.on(Events.InteractionCreate, async interaction => {
     // POINTS MODAL
 
     if (
-  interaction.isModalSubmit() &&
-  interaction.customId.startsWith("points_")
-) {
-  await interaction.deferReply({ ephemeral: true });
+      interaction.isModalSubmit() &&
+      interaction.customId.startsWith("points_")
+    ) {
+      await interaction.deferReply({ ephemeral: true });
 
-  const action = interaction.customId.split("_")[1];
+      const action = interaction.customId.split("_")[1];
 
-            if (
+      if (action !== "add" && action !== "remove") {
+        return interaction.editReply({
+          content: "نوع العملية غير صحيح."
+        });
+      }
+
+      if (
+        !isOwner(interaction) &&
+        !hasRole(interaction.member, CONFIG.POINTS_ROLE_IDS)
+      ) {
+        return interaction.editReply({
+          content: "ليس لديك صلاحية إدارة النقاط."
+        });
+      }
+
+      const userId = interaction.fields
+        .getTextInputValue("user_id")
+        .trim();
+
+      const amount = Number(
+        interaction.fields.getTextInputValue("amount").trim()
+      );
+
+      if (
         !/^\d{17,20}$/.test(userId) ||
         !Number.isSafeInteger(amount) ||
         amount <= 0 ||
@@ -667,7 +694,9 @@ client.on(Events.InteractionCreate, async interaction => {
       }
 
       db.points[userId] =
-        action === "add" ? current + amount : current - amount;
+        action === "add"
+          ? current + amount
+          : current - amount;
 
       saveDB();
 
@@ -677,6 +706,7 @@ client.on(Events.InteractionCreate, async interaction => {
           `العضو: <@${userId}>\n` +
           `الرصيد الحالي: **${db.points[userId]}**`
       });
+    }
 
   } catch (error) {
     console.error("Interaction Error:", error);
